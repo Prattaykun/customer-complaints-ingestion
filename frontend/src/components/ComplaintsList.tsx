@@ -136,7 +136,7 @@ export default function ComplaintsList({
             className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs gap-1.5 h-9 px-4 shadow-md transition-all hover:scale-[1.02]"
           >
             <Plus size={15} />
-            + New Complaint
+            New Complaint
           </Button>
         </div>
       </div>
@@ -187,7 +187,7 @@ export default function ComplaintsList({
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
                 {searchTerm
                   ? "Try searching with a different product name or batch number."
-                  : "Click the '+ New Complaint' button above to log a new complaint with the AI Co-pilot."}
+                  : "Click the ' New Complaint' button above to log a new complaint with the AI Co-pilot."}
               </p>
               {!searchTerm && (
                 <Button size="sm" onClick={onNewComplaint} className="mt-2 text-xs bg-blue-600 text-white">
@@ -197,17 +197,17 @@ export default function ComplaintsList({
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+            <div className="overflow-auto max-h-[calc(100vh-320px)] min-h-[300px] relative">
+              <table className="w-full text-left text-xs border-collapse min-w-[850px]">
                 <thead>
-                  <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/60 dark:bg-slate-900/60 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Product Details</th>
-                    <th className="py-3 px-4">Batch / Lot</th>
-                    <th className="py-3 px-4">Category</th>
-                    <th className="py-3 px-4">Complainant</th>
-                    <th className="py-3 px-4">Severity & Risk</th>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                  <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Product Details</th>
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Batch / Lot</th>
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Category</th>
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Complainant</th>
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Severity & Risk</th>
+                    <th className="py-3 px-4 sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Date</th>
+                    <th className="py-3 px-4 text-right sticky top-0 z-10 bg-slate-100/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-sm">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">

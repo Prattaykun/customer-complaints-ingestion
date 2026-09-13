@@ -85,4 +85,32 @@ export async function getComplaint(id: string): Promise<ComplaintData> {
   return data;
 }
 
+export interface DuplicateDetails {
+  matched_complaint_id?: string;
+  matched_product?: string;
+  matched_batch?: string;
+  similarity_score: number;
+  confidence: number;
+  explanation: string;
+}
+
+export interface SubmitResponse {
+  success: boolean;
+  message: string;
+  complaint: ComplaintData | null;
+  duplicate_detected: boolean;
+  duplicate_details: DuplicateDetails | null;
+}
+
+export async function submitComplaint(
+  complaintData: ComplaintData,
+  force: boolean = false
+): Promise<SubmitResponse> {
+  const { data } = await api.post<SubmitResponse>(
+    `/complaints/submit?force=${force}`,
+    complaintData
+  );
+  return data;
+}
+
 export default api;

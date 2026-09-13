@@ -56,12 +56,33 @@ const initialState: ComplaintState = {
   status: "draft",
 };
 
+function sanitizeComplaintData(data: Partial<ComplaintState>): Partial<ComplaintState> {
+  const result = { ...data };
+  let phone = result.complainantPhone !== undefined ? result.complainantPhone : "";
+  let code = result.countryCode !== undefined ? result.countryCode : "";
+
+  // Only parse country code from actual phone values, NOT from complainantContact
+  if (phone && phone.trim().startsWith("+")) {
+    const match = phone.trim().match(/^(\+\d{1,4})\s*(.*)$/);
+    if (match) {
+      code = match[1];
+      phone = match[2];
+    }
+  }
+
+  if (phone) result.complainantPhone = phone;
+  if (code) result.countryCode = code;
+
+  return result;
+}
+
 const complaintSlice = createSlice({
   name: "complaint",
   initialState,
   reducers: {
     setComplaintData(state, action: PayloadAction<Partial<ComplaintState>>) {
-      return { ...state, ...action.payload };
+      const sanitized = sanitizeComplaintData(action.payload);
+      return { ...state, ...sanitized };
     },
     resetComplaint() {
       return { ...initialState };
@@ -71,6 +92,14 @@ const complaintSlice = createSlice({
       action: PayloadAction<{ field: keyof ComplaintState; value: unknown }>
     ) {
       const { field, value } = action.payload;
+      if (field === "complainantPhone" && typeof value === "string" && value.trim().startsWith("+")) {
+        const match = value.trim().match(/^(\+\d{1,4})\s*(.*)$/);
+        if (match) {
+          state.countryCode = match[1];
+          state.complainantPhone = match[2];
+          return;
+        }
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (state as any)[field] = value;
     },

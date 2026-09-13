@@ -1,98 +1,45 @@
 import json
-from typing import Optional, List
+import re
+from typing import Optional, List, Any
 from langchain_core.tools import tool
+
+
+def _s(value: Any) -> str:
+    """Coerce tool args to string; treat null/None as empty."""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _f(value: Any, default: float = 0.0) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_phone_and_country_code(phone: Any, contact: Any, country_code: Any) -> tuple[str, str]:
+    """Parse phone number and country code if phone or contact starts with +country_code."""
+    phone_val = _s(phone)
+    contact_val = _s(contact)
+    code_val = _s(country_code)
+
+    target = phone_val if phone_val else (contact_val if "@" not in contact_val else "")
+
+    if target and target.startswith("+"):
+        match = re.match(r"^(\+\d{1,4})\s*(.*)$", target)
+        if match:
+            extracted_code, rest_phone = match.groups()
+            code_val = extracted_code
+            phone_val = rest_phone
+
+    return phone_val, code_val
 
 
 @tool
 def log_complaint(
-    product_name: str = "",
-    product_strength: str = "",
-    dosage_form: str = "",
-    batch_number: str = "",
-    lot_number: str = "",
-    manufacturing_date: str = "",
-    expiry_date: str = "",
-    complaint_category: str = "",
-    complaint_description: str = "",
-    complainant_name: str = "",
-    complainant_contact: str = "",
-    complainant_phone: str = "",
-    complainant_email: str = "",
-    country_code: str = "",
-    date_of_complaint: str = "",
-    date_of_incident: str = "",
-    severity_level: str = "",
-    risk_score: float = 0,
-    recommended_actions: Optional[List[str]] = None,
-    root_cause_hypothesis: str = "",
-    capa_recommendation: str = "",
-    complaint_summary: str = "",
-) -> str:
-    """Log a new customer complaint by extracting details from the user's natural language description.
-    
-    Use this tool when the user describes a new pharmaceutical complaint. Extract ALL
-    relevant product information, batch details, complaint details, and generate a
-    risk assessment including severity level, risk score, recommended actions,
-    root cause hypothesis, and CAPA recommendation.
-    
-    Args:
-        product_name: Name of the pharmaceutical product (e.g., "Amoxicillin Capsules")
-        product_strength: Strength/dosage of the product (e.g., "500mg")
-        dosage_form: Form of the product (e.g., "Capsules", "Tablets", "Injection")
-        batch_number: Batch/lot identifier for the product
-        lot_number: Additional lot tracking number if available
-        manufacturing_date: Date the batch was manufactured (YYYY-MM-DD format)
-        expiry_date: Expiration date of the batch (YYYY-MM-DD format)
-        complaint_category: Category of complaint (Product Quality, Packaging Defect, Adverse Event, Potency/Efficacy, Contamination, Stability, Documentation)
-        complaint_description: Detailed description of the complaint
-        complainant_name: Name of the person filing the complaint
-        complainant_contact: Combined contact information string
-        complainant_phone: Phone number of the complainant
-        complainant_email: Email address of the complainant
-        country_code: Country phone code (e.g., "+1", "+44", "+91")
-        date_of_complaint: Date the complaint was received (YYYY-MM-DD format)
-        date_of_incident: Date the issue was observed/occurred (YYYY-MM-DD format)
-        severity_level: Risk severity classification (Critical, Major, or Minor)
-        risk_score: Numerical risk score from 1-100
-        recommended_actions: List of recommended actions to take
-        root_cause_hypothesis: Preliminary root cause analysis
-        capa_recommendation: Corrective and Preventive Action recommendation
-        complaint_summary: Brief AI-generated summary of the complaint
-    
-    Returns:
-        JSON string of the complaint data that was logged.
-    """
-    complaint_data = {
-        "productName": product_name,
-        "productStrength": product_strength,
-        "dosageForm": dosage_form,
-        "batchNumber": batch_number,
-        "lotNumber": lot_number,
-        "manufacturingDate": manufacturing_date,
-        "expiryDate": expiry_date,
-        "complaintCategory": complaint_category,
-        "complaintDescription": complaint_description,
-        "complainantName": complainant_name,
-        "complainantContact": complainant_contact,
-        "complainantPhone": complainant_phone,
-        "complainantEmail": complainant_email,
-        "countryCode": country_code,
-        "dateOfComplaint": date_of_complaint,
-        "dateOfIncident": date_of_incident,
-        "severityLevel": severity_level,
-        "riskScore": risk_score,
-        "recommendedActions": recommended_actions or [],
-        "rootCauseHypothesis": root_cause_hypothesis,
-        "capaRecommendation": capa_recommendation,
-        "complaintSummary": complaint_summary,
-        "status": "logged",
-    }
-    return json.dumps(complaint_data)
-
-
-@tool
-def edit_complaint(
-    existing_complaint: str = "{}",
     product_name: Optional[str] = None,
     product_strength: Optional[str] = None,
     dosage_form: Optional[str] = None,
@@ -116,47 +63,110 @@ def edit_complaint(
     capa_recommendation: Optional[str] = None,
     complaint_summary: Optional[str] = None,
 ) -> str:
-    """Edit an existing customer complaint by updating only the specified fields.
-    
-    Use this tool when the user wants to modify specific fields of an existing complaint.
-    Only update the fields that are explicitly provided — preserve all other existing data.
-    Pass the current complaint data as existing_complaint JSON string so unchanged fields
-    are preserved.
-    
-    Args:
-        existing_complaint: JSON string of the current complaint data to preserve unchanged fields
-        product_name: Updated product name (None = keep existing)
-        product_strength: Updated strength (None = keep existing)
-        dosage_form: Updated dosage form (None = keep existing)
-        batch_number: Updated batch number (None = keep existing)
-        lot_number: Updated lot number (None = keep existing)
-        manufacturing_date: Updated manufacturing date (None = keep existing)
-        expiry_date: Updated expiry date (None = keep existing)
-        complaint_category: Updated complaint category (None = keep existing)
-        complaint_description: Updated description (None = keep existing)
-        complainant_name: Updated complainant name (None = keep existing)
-        complainant_contact: Updated contact info (None = keep existing)
-        complainant_phone: Updated phone number (None = keep existing)
-        complainant_email: Updated email address (None = keep existing)
-        country_code: Updated country code (None = keep existing)
-        date_of_complaint: Updated complaint date (None = keep existing)
-        date_of_incident: Updated incident date (None = keep existing)
-        severity_level: Updated severity (None = keep existing)
-        risk_score: Updated risk score (None = keep existing)
-        recommended_actions: Updated actions list (None = keep existing)
-        root_cause_hypothesis: Updated root cause (None = keep existing)
-        capa_recommendation: Updated CAPA (None = keep existing)
-        complaint_summary: Updated summary (None = keep existing)
-    
-    Returns:
-        JSON string of the updated complaint data with all fields (changed + preserved).
-    """
-    try:
-        existing = json.loads(existing_complaint)
-    except (json.JSONDecodeError, TypeError):
-        existing = {}
+    """Log a new customer complaint by extracting details from the user's natural language description.
 
-    field_mapping = {
+    ALWAYS use this tool first when the user pastes/describes a new complaint narrative.
+    Extract EVERY field present in the text before asking for anything missing.
+    For unknown fields: OMIT them or pass an empty string "". NEVER pass null.
+    Convert natural dates (e.g. 11 September 2026 → 2026-09-11, July 2028 → 2028-07-31).
+    Infer dosage form from product wording (Tablets/Capsules/etc.).
+    Infer category (discoloration/spots → Product Quality).
+    Infer country_code from location (India → +91).
+
+    Args:
+        product_name: Name of the pharmaceutical product (e.g., "Amoxicillin Capsules")
+        product_strength: Strength/dosage of the product (e.g., "500mg")
+        dosage_form: Form of the product (e.g., "Capsules", "Tablets", "Injection")
+        batch_number: Batch/lot identifier for the product
+        lot_number: Additional lot tracking number if available (use "" if unknown)
+        manufacturing_date: Date the batch was manufactured (YYYY-MM-DD format)
+        expiry_date: Expiration date of the batch (YYYY-MM-DD format)
+        complaint_category: Category of complaint (Product Quality, Packaging Defect, Adverse Event, Potency/Efficacy, Contamination, Stability, Documentation)
+        complaint_description: Detailed description of the complaint
+        complainant_name: Name of the person filing the complaint
+        complainant_contact: Combined contact information string
+        complainant_phone: Phone number of the complainant (use "" if unknown — never null)
+        complainant_email: Email address of the complainant
+        country_code: Country phone code (e.g., "+1", "+44", "+91")
+        date_of_complaint: Date the complaint was received (YYYY-MM-DD format)
+        date_of_incident: Date the issue was observed/occurred (YYYY-MM-DD format)
+        severity_level: Risk severity classification (Critical, Major, or Minor)
+        risk_score: Numerical risk score from 1-100
+        recommended_actions: List of recommended actions to take
+        root_cause_hypothesis: Preliminary root cause analysis
+        capa_recommendation: Corrective and Preventive Action recommendation
+        complaint_summary: Brief AI-generated summary of the complaint
+
+    Returns:
+        JSON string of the complaint data that was logged.
+    """
+    phone, code = _parse_phone_and_country_code(
+        complainant_phone, complainant_contact, country_code
+    )
+
+    complaint_data = {
+        "productName": _s(product_name),
+        "productStrength": _s(product_strength),
+        "dosageForm": _s(dosage_form),
+        "batchNumber": _s(batch_number),
+        "lotNumber": _s(lot_number),
+        "manufacturingDate": _s(manufacturing_date),
+        "expiryDate": _s(expiry_date),
+        "complaintCategory": _s(complaint_category),
+        "complaintDescription": _s(complaint_description),
+        "complainantName": _s(complainant_name),
+        "complainantContact": _s(complainant_contact),
+        "complainantPhone": phone,
+        "complainantEmail": _s(complainant_email),
+        "countryCode": code,
+        "dateOfComplaint": _s(date_of_complaint),
+        "dateOfIncident": _s(date_of_incident),
+        "severityLevel": _s(severity_level),
+        "riskScore": _f(risk_score),
+        "recommendedActions": recommended_actions or [],
+        "rootCauseHypothesis": _s(root_cause_hypothesis),
+        "capaRecommendation": _s(capa_recommendation),
+        "complaintSummary": _s(complaint_summary),
+        "status": "logged",
+    }
+    return json.dumps(complaint_data)
+
+
+@tool
+def edit_complaint(
+    product_name: Optional[str] = None,
+    product_strength: Optional[str] = None,
+    dosage_form: Optional[str] = None,
+    batch_number: Optional[str] = None,
+    lot_number: Optional[str] = None,
+    manufacturing_date: Optional[str] = None,
+    expiry_date: Optional[str] = None,
+    complaint_category: Optional[str] = None,
+    complaint_description: Optional[str] = None,
+    complainant_name: Optional[str] = None,
+    complainant_contact: Optional[str] = None,
+    complainant_phone: Optional[str] = None,
+    complainant_email: Optional[str] = None,
+    country_code: Optional[str] = None,
+    date_of_complaint: Optional[str] = None,
+    date_of_incident: Optional[str] = None,
+    severity_level: Optional[str] = None,
+    risk_score: Optional[float] = None,
+    recommended_actions: Optional[List[str]] = None,
+    root_cause_hypothesis: Optional[str] = None,
+    capa_recommendation: Optional[str] = None,
+    complaint_summary: Optional[str] = None,
+) -> str:
+    """Edit an existing complaint by updating ONLY the fields the user provided.
+
+    Do NOT pass the full existing complaint as JSON. Only pass changed fields.
+    Never pass null — omit unknown fields or use "".
+    The system merges these updates into the current complaint record automatically.
+
+    Returns:
+        JSON string of ONLY the changed fields (partial update).
+    """
+    raw = {
         "productName": product_name,
         "productStrength": product_strength,
         "dosageForm": dosage_form,
@@ -181,94 +191,87 @@ def edit_complaint(
         "complaintSummary": complaint_summary,
     }
 
-    for key, value in field_mapping.items():
-        if value is not None:
-            existing[key] = value
+    updates: dict[str, Any] = {}
+    for key, value in raw.items():
+        if value is None:
+            continue
+        if key == "recommendedActions":
+            updates[key] = value if isinstance(value, list) else []
+        elif key == "riskScore":
+            updates[key] = _f(value)
+        else:
+            updates[key] = _s(value)
 
-    return json.dumps(existing)
+    if any(k in updates for k in ("complainantPhone", "countryCode", "complainantContact")):
+        phone, code = _parse_phone_and_country_code(
+            updates.get("complainantPhone", ""),
+            updates.get("complainantContact", ""),
+            updates.get("countryCode", ""),
+        )
+        if "complainantPhone" in updates or phone:
+            updates["complainantPhone"] = phone
+        if "countryCode" in updates or code:
+            updates["countryCode"] = code
+
+    return json.dumps(updates)
 
 
 @tool
 def extract_document(
-    product_name: str = "",
-    product_strength: str = "",
-    dosage_form: str = "",
-    batch_number: str = "",
-    lot_number: str = "",
-    manufacturing_date: str = "",
-    expiry_date: str = "",
-    complaint_category: str = "",
-    complaint_description: str = "",
-    complainant_name: str = "",
-    complainant_contact: str = "",
-    complainant_phone: str = "",
-    complainant_email: str = "",
-    country_code: str = "",
-    date_of_complaint: str = "",
-    date_of_incident: str = "",
-    severity_level: str = "",
-    risk_score: float = 0,
+    product_name: Optional[str] = None,
+    product_strength: Optional[str] = None,
+    dosage_form: Optional[str] = None,
+    batch_number: Optional[str] = None,
+    lot_number: Optional[str] = None,
+    manufacturing_date: Optional[str] = None,
+    expiry_date: Optional[str] = None,
+    complaint_category: Optional[str] = None,
+    complaint_description: Optional[str] = None,
+    complainant_name: Optional[str] = None,
+    complainant_contact: Optional[str] = None,
+    complainant_phone: Optional[str] = None,
+    complainant_email: Optional[str] = None,
+    country_code: Optional[str] = None,
+    date_of_complaint: Optional[str] = None,
+    date_of_incident: Optional[str] = None,
+    severity_level: Optional[str] = None,
+    risk_score: Optional[float] = None,
     recommended_actions: Optional[List[str]] = None,
-    root_cause_hypothesis: str = "",
-    capa_recommendation: str = "",
-    complaint_summary: str = "",
+    root_cause_hypothesis: Optional[str] = None,
+    capa_recommendation: Optional[str] = None,
+    complaint_summary: Optional[str] = None,
 ) -> str:
     """Extract complaint details from an uploaded document (PDF, email, or other text).
-    
-    Use this tool when the user uploads a document containing pharmaceutical complaint
-    or manufacturing data. Parse the document text to extract all relevant fields and
-    generate a risk assessment. Do NOT echo back the raw document text.
-    
-    Args:
-        product_name: Extracted product name
-        product_strength: Extracted product strength
-        dosage_form: Extracted dosage form
-        batch_number: Extracted batch number
-        lot_number: Extracted lot number
-        manufacturing_date: Extracted manufacturing date
-        expiry_date: Extracted expiry date
-        complaint_category: Determined complaint category
-        complaint_description: Extracted or synthesized complaint description
-        complainant_name: Extracted complainant name
-        complainant_contact: Extracted contact information
-        complainant_phone: Extracted phone number
-        complainant_email: Extracted email address
-        country_code: Extracted country phone code (e.g. "+1")
-        date_of_complaint: Extracted complaint date
-        date_of_incident: Extracted incident date
-        severity_level: AI-determined severity (Critical/Major/Minor)
-        risk_score: AI-determined risk score (1-100)
-        recommended_actions: AI-recommended actions list
-        root_cause_hypothesis: AI-generated root cause hypothesis
-        capa_recommendation: AI-generated CAPA recommendation
-        complaint_summary: AI-generated summary of the document and complaint
-    
-    Returns:
-        JSON string of the extracted and assessed complaint data.
+
+    Parse the document and populate all available fields. Never pass null for missing
+    fields — omit them or use "". Do NOT echo back the raw document text.
     """
+    phone, code = _parse_phone_and_country_code(
+        complainant_phone, complainant_contact, country_code
+    )
     complaint_data = {
-        "productName": product_name,
-        "productStrength": product_strength,
-        "dosageForm": dosage_form,
-        "batchNumber": batch_number,
-        "lotNumber": lot_number,
-        "manufacturingDate": manufacturing_date,
-        "expiryDate": expiry_date,
-        "complaintCategory": complaint_category,
-        "complaintDescription": complaint_description,
-        "complainantName": complainant_name,
-        "complainantContact": complainant_contact,
-        "complainantPhone": complainant_phone,
-        "complainantEmail": complainant_email,
-        "countryCode": country_code,
-        "dateOfComplaint": date_of_complaint,
-        "dateOfIncident": date_of_incident,
-        "severityLevel": severity_level,
-        "riskScore": risk_score,
+        "productName": _s(product_name),
+        "productStrength": _s(product_strength),
+        "dosageForm": _s(dosage_form),
+        "batchNumber": _s(batch_number),
+        "lotNumber": _s(lot_number),
+        "manufacturingDate": _s(manufacturing_date),
+        "expiryDate": _s(expiry_date),
+        "complaintCategory": _s(complaint_category),
+        "complaintDescription": _s(complaint_description),
+        "complainantName": _s(complainant_name),
+        "complainantContact": _s(complainant_contact),
+        "complainantPhone": phone,
+        "complainantEmail": _s(complainant_email),
+        "countryCode": code,
+        "dateOfComplaint": _s(date_of_complaint),
+        "dateOfIncident": _s(date_of_incident),
+        "severityLevel": _s(severity_level),
+        "riskScore": _f(risk_score),
         "recommendedActions": recommended_actions or [],
-        "rootCauseHypothesis": root_cause_hypothesis,
-        "capaRecommendation": capa_recommendation,
-        "complaintSummary": complaint_summary,
+        "rootCauseHypothesis": _s(root_cause_hypothesis),
+        "capaRecommendation": _s(capa_recommendation),
+        "complaintSummary": _s(complaint_summary),
         "status": "logged",
     }
     return json.dumps(complaint_data)
@@ -276,127 +279,65 @@ def extract_document(
 
 @tool
 def assess_risk(
-    complaint_data: str,
-    severity_level: str = "",
-    risk_score: float = 0,
+    severity_level: Optional[str] = None,
+    risk_score: Optional[float] = None,
     recommended_actions: Optional[List[str]] = None,
-    root_cause_hypothesis: str = "",
-    capa_recommendation: str = "",
+    root_cause_hypothesis: Optional[str] = None,
+    capa_recommendation: Optional[str] = None,
 ) -> str:
-    """Generate or update a risk assessment for an existing complaint.
-    
-    Use this tool to evaluate the risk level of a complaint and provide
-    severity classification, risk scoring, recommended actions, root cause
-    analysis, and CAPA recommendations based on pharmaceutical QMS standards.
-    
-    Args:
-        complaint_data: JSON string of the current complaint data to assess
-        severity_level: Determined severity level (Critical, Major, or Minor)
-        risk_score: Numerical risk score from 1-100
-        recommended_actions: List of recommended investigation/remediation actions
-        root_cause_hypothesis: Preliminary root cause analysis based on complaint details
-        capa_recommendation: Corrective and Preventive Action recommendation
-    
-    Returns:
-        JSON string of the complaint data with updated risk assessment fields.
+    """Generate or update a risk assessment for the current complaint.
+
+    Do NOT pass complaint_data JSON. Only pass the assessment fields below.
+    Never pass null — use "" or omit. The system merges into the current record.
     """
-    try:
-        existing = json.loads(complaint_data)
-    except (json.JSONDecodeError, TypeError):
-        existing = {}
-
-    existing["severityLevel"] = severity_level
-    existing["riskScore"] = risk_score
-    existing["recommendedActions"] = recommended_actions or []
-    existing["rootCauseHypothesis"] = root_cause_hypothesis
-    existing["capaRecommendation"] = capa_recommendation
-
-    return json.dumps(existing)
+    return json.dumps({
+        "severityLevel": _s(severity_level),
+        "riskScore": _f(risk_score),
+        "recommendedActions": recommended_actions or [],
+        "rootCauseHypothesis": _s(root_cause_hypothesis),
+        "capaRecommendation": _s(capa_recommendation),
+    })
 
 
 @tool
-def check_completeness(complaint_data: str) -> str:
-    """Check the completeness of a complaint record against QMS requirements.
-    
-    Evaluates which required fields are filled and calculates a completeness
-    percentage. Returns a score and list of missing fields to help ensure
-    the complaint record meets quality management standards.
-    
-    Args:
-        complaint_data: JSON string of the current complaint data to evaluate
-    
-    Returns:
-        JSON string with completeness_score (0-100) and missing_fields list.
+def check_completeness() -> str:
+    """Check completeness of the CURRENT complaint in context.
+
+    Do NOT pass complaint_data JSON. Call with no arguments.
     """
-    try:
-        data = json.loads(complaint_data)
-    except (json.JSONDecodeError, TypeError):
-        data = {}
-
-    required_fields = {
-        "productName": "Product Name",
-        "productStrength": "Product Strength",
-        "dosageForm": "Dosage Form",
-        "batchNumber": "Batch Number",
-        "manufacturingDate": "Manufacturing Date",
-        "expiryDate": "Expiry Date",
-        "complaintCategory": "Complaint Category",
-        "complaintDescription": "Complaint Description",
-        "complainantName": "Complainant Name",
-        "complainantEmail": "Complainant Email",
-        "complainantPhone": "Complainant Phone",
-        "countryCode": "Country Code",
-        "dateOfComplaint": "Date of Complaint",
-        "severityLevel": "Severity Level",
-        "riskScore": "Risk Score",
-    }
-
-    filled = 0
-    missing = []
-    for field_key, field_label in required_fields.items():
-        value = data.get(field_key, "")
-        if value and str(value).strip() and value != 0:
-            filled += 1
-        else:
-            missing.append(field_label)
-
-    score = round((filled / len(required_fields)) * 100, 1)
-
-    result = {
-        "completenessScore": score,
-        "missingFields": missing,
-        "totalFields": len(required_fields),
-        "filledFields": filled,
-    }
-    return json.dumps(result)
+    return json.dumps({"action": "check_completeness"})
 
 
 @tool
 def request_missing_info(
-    missing_fields: List[str],
-    prompt: str = "Please provide the missing complaint details to complete the record:"
+    missing_fields: Optional[List[str]] = None,
+    prompt: Optional[str] = None,
 ) -> str:
-    """Request missing information from the user by generating an interactive OpenUI form card in chat.
-    
-    Use this tool whenever required or key fields (such as complainant_email, complainant_phone,
-    country_code, batch_number, etc.) are missing during document extraction or complaint logging.
-    
+    """Request missing information from the user via an interactive OpenUI form card.
+
     Args:
-        missing_fields: List of missing field keys (e.g. ["complainantEmail", "complainantPhone", "countryCode"])
+        missing_fields: List of missing field keys (e.g. ["complainantEmail", "complainantPhone"])
         prompt: Explanation of what fields are needed
-    
-    Returns:
-        JSON string containing the OpenUI component markup and fields list.
     """
-    fields_str = ",".join(missing_fields)
-    openui_markup = f'<MissingInfoForm title="Provide Missing Details" fields="{fields_str}" prompt="{prompt}" />'
-    result = {
-        "missing_fields": missing_fields,
-        "prompt": prompt,
+    fields = [ _s(f) for f in (missing_fields or []) if _s(f) ]
+    prompt_text = _s(prompt) or "Please provide the missing complaint details to complete the record:"
+    fields_str = ",".join(fields)
+    openui_markup = (
+        f'<MissingInfoForm title="Provide Missing Details" '
+        f'fields="{fields_str}" prompt="{prompt_text}" />'
+    )
+    return json.dumps({
+        "missing_fields": fields,
+        "prompt": prompt_text,
         "openui_markup": openui_markup,
-    }
-    return json.dumps(result)
+    })
 
 
-# Export all tools for use in the graph
-ALL_TOOLS = [log_complaint, edit_complaint, extract_document, assess_risk, check_completeness, request_missing_info]
+ALL_TOOLS = [
+    log_complaint,
+    edit_complaint,
+    extract_document,
+    assess_risk,
+    check_completeness,
+    request_missing_info,
+]

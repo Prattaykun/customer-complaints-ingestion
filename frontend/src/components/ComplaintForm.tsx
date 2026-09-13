@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Package,
   Hash,
@@ -11,16 +12,25 @@ import {
   Mail,
   Phone,
   Globe,
+  Send,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAppSelector } from "@/store/hooks";
-
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setComplaintData } from "@/store/complaintSlice";
+import { addMessage } from "@/store/chatSlice";
+import {
+  submitComplaint,
+  type DuplicateDetails,
+} from "@/services/api";
 import { AnimatedFormField } from "@/components/AnimatedFormField";
+import DuplicateAlertModal from "@/components/DuplicateAlertModal";
 
 function SeverityBadge({ level }: { level: string }) {
   const colorMap: Record<string, string> = {
@@ -40,7 +50,84 @@ function SeverityBadge({ level }: { level: string }) {
 }
 
 export default function ComplaintForm() {
+  const dispatch = useAppDispatch();
   const complaint = useAppSelector((state) => state.complaint);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [duplicateDetails, setDuplicateDetails] =
+    useState<DuplicateDetails | null>(null);
+
+  const canSubmit = Boolean(
+    complaint.productName ||
+      complaint.complaintDescription ||
+      complaint.batchNumber
+  );
+
+  const handleSubmit = async () => {
+    if (!canSubmit || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setSubmitSuccess(null);
+    setDuplicateOpen(false);
+    setDuplicateDetails(null);
+
+    try {
+      const response = await submitComplaint(complaint, false);
+
+      if (response.duplicate_detected && response.duplicate_details) {
+        setDuplicateDetails(response.duplicate_details);
+        setDuplicateOpen(true);
+        dispatch(
+          addMessage({
+            id: Date.now().toString(),
+            role: "assistant",
+            content:
+              `**Duplicate complaint rejected.**\n\n` +
+              `${response.message}\n\n` +
+              `Similarity: ${Math.round((response.duplicate_details.similarity_score || 0) * 100)}% · ` +
+              `LLM confidence: ${Math.round((response.duplicate_details.confidence || 0) * 100)}%\n\n` +
+              `${response.duplicate_details.explanation || ""}`,
+            timestamp: new Date().toISOString(),
+          })
+        );
+        return;
+      }
+
+      if (!response.success) {
+        setSubmitError(response.message || "Submission failed.");
+        return;
+      }
+
+      if (response.complaint) {
+        dispatch(setComplaintData(response.complaint));
+      } else {
+        dispatch(setComplaintData({ status: "submitted" }));
+      }
+
+      setSubmitSuccess(response.message || "Complaint submitted successfully.");
+      dispatch(
+        addMessage({
+          id: Date.now().toString(),
+          role: "assistant",
+          content:
+            `**Complaint submitted successfully.**\n\n` +
+            `No duplicates were detected by the  retrieval + LLM verification pipeline. ` +
+            `The record is now saved with status **submitted**.`,
+          timestamp: new Date().toISOString(),
+        })
+      );
+    } catch (error) {
+      console.error("Submit error:", error);
+      setSubmitError(
+        "Failed to submit complaint. Ensure the backend is running and try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="complaint-form-container">
@@ -157,7 +244,7 @@ export default function ComplaintForm() {
                 />
                 <AnimatedFormField
                   label="Complainant Email"
-                  value={complaint.complainantEmail || (complaint.complainantContact && complaint.complainantContact.includes("@") ? complaint.complainantContact : "")}
+                  value={complaint.complainantEmail}
                   fieldKey="complainantEmail"
                   icon={Mail}
                 />
@@ -171,7 +258,7 @@ export default function ComplaintForm() {
                 />
                 <AnimatedFormField
                   label="Complainant Phone"
-                  value={complaint.complainantPhone || (!complaint.complainantContact.includes("@") ? complaint.complainantContact : "")}
+                  value={complaint.complainantPhone}
                   fieldKey="complainantPhone"
                   icon={Phone}
                 />
@@ -203,7 +290,6 @@ export default function ComplaintForm() {
               <SeverityBadge level={complaint.severityLevel} />
             </CardHeader>
             <CardContent className="form-section-content">
-              {/* Risk Score */}
               <div className="risk-score-section">
                 <div className="risk-score-header">
                   <Label className="form-label">Risk Score</Label>
@@ -219,7 +305,6 @@ export default function ComplaintForm() {
 
               <Separator className="form-separator" />
 
-              {/* Recommended Actions */}
               {complaint.recommendedActions.length > 0 && (
                 <div className="risk-section">
                   <Label className="form-label">Recommended Actions</Label>
@@ -237,7 +322,6 @@ export default function ComplaintForm() {
                 </div>
               )}
 
-              {/* Root Cause */}
               {complaint.rootCauseHypothesis && (
                 <div className="risk-section">
                   <Label className="form-label">Root Cause Hypothesis</Label>
@@ -245,7 +329,6 @@ export default function ComplaintForm() {
                 </div>
               )}
 
-              {/* CAPA */}
               {complaint.capaRecommendation && (
                 <div className="risk-section">
                   <Label className="form-label">CAPA Recommendation</Label>
@@ -253,7 +336,6 @@ export default function ComplaintForm() {
                 </div>
               )}
 
-              {/* Completeness */}
               {complaint.completenessScore > 0 && (
                 <>
                   <Separator className="form-separator" />
@@ -272,7 +354,6 @@ export default function ComplaintForm() {
                 </>
               )}
 
-              {/* Summary */}
               {complaint.complaintSummary && (
                 <div className="risk-section">
                   <Label className="form-label">AI Summary</Label>
@@ -281,8 +362,56 @@ export default function ComplaintForm() {
               )}
             </CardContent>
           </Card>
+
+          {/* Submit Action */}
+          <div className="complaint-submit-bar">
+            <div className="complaint-submit-copy">
+              <p className="complaint-submit-title">Ready to submit?</p>
+              <p className="complaint-submit-desc">
+                Submits to the complaints table after  retrieval
+                and LLM duplicate verification. Duplicates are rejected.
+              </p>
+            </div>
+            <Button
+              className="complaint-submit-btn"
+              onClick={handleSubmit}
+              disabled={!canSubmit || isSubmitting || complaint.status === "submitted"}
+            >
+              {isSubmitting ? (
+                <Loader2 size={15} className="animate-spin mr-1.5" />
+              ) : (
+                <Send size={15} className="mr-1.5" />
+              )}
+              {complaint.status === "submitted"
+                ? "Already Submitted"
+                : isSubmitting
+                  ? "Checking Duplicates..."
+                  : "Submit Complaint"}
+            </Button>
+          </div>
+
+          {submitSuccess && (
+            <div className="complaint-submit-success">{submitSuccess}</div>
+          )}
+          {submitError && (
+            <div className="complaint-submit-error">{submitError}</div>
+          )}
         </div>
       </ScrollArea>
+
+      {duplicateDetails && (
+        <DuplicateAlertModal
+          isOpen={duplicateOpen}
+          details={duplicateDetails}
+          onDismiss={() => {
+            setDuplicateOpen(false);
+            setSubmitError(
+              "Submission rejected: potential duplicate complaint detected."
+            );
+          }}
+          isSubmitting={false}
+        />
+      )}
     </div>
   );
 }

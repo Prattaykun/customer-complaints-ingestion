@@ -1,10 +1,26 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import Column, String, Integer, Float, Text, DateTime, JSON
+from sqlalchemy import Column, String, Float, Text, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
+from pgvector.sqlalchemy import Vector
 
 from models.database import Base
+
+# Gemini gemini-embedding-2 output dimensionality
+EMBEDDING_DIMENSIONS = 3072
+
+
+def _embedding_as_list(value: Any) -> list[float]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return list(value)
+    try:
+        return list(value)
+    except TypeError:
+        return []
 
 
 class Complaint(Base):
@@ -35,7 +51,7 @@ class Complaint(Base):
     date_of_incident = Column(String(50), nullable=True)
 
     # AI Risk Assessment
-    severity_level = Column(String(50), nullable=True)  # Critical / Major / Minor
+    severity_level = Column(String(100), nullable=True)  # Critical / Major / Minor
     risk_score = Column(Float, nullable=True)
     recommended_actions = Column(JSON, nullable=True, default=list)
     root_cause_hypothesis = Column(Text, nullable=True)
@@ -43,14 +59,20 @@ class Complaint(Base):
     complaint_summary = Column(Text, nullable=True)
     completeness_score = Column(Float, nullable=True)
 
+    # Gemini embedding vector for duplicate retrieval (pgvector)
+    embedding = Column(Vector(EMBEDDING_DIMENSIONS), nullable=True)
+    embedding_model = Column(String(100), nullable=True)
+    embedding_updated_at = Column(DateTime, nullable=True)
+
     # Status and Metadata
     status = Column(String(50), default="draft")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    def to_dict(self):
+    def to_dict(self, include_embedding: bool = False):
         """Convert complaint to a dictionary for API responses."""
-        return {
+        embedding_list = _embedding_as_list(self.embedding)
+        data = {
             "id": str(self.id),
             "productName": self.product_name or "",
             "productStrength": self.product_strength or "",
@@ -76,6 +98,12 @@ class Complaint(Base):
             "complaintSummary": self.complaint_summary or "",
             "completenessScore": self.completeness_score or 0,
             "status": self.status or "draft",
+            "embeddingModel": self.embedding_model or "",
+            "hasEmbedding": len(embedding_list) > 0,
+            "embeddingDimensions": len(embedding_list),
             "createdAt": self.created_at.isoformat() if self.created_at else "",
             "updatedAt": self.updated_at.isoformat() if self.updated_at else "",
         }
+        if include_embedding:
+            data["embedding"] = embedding_list
+        return data

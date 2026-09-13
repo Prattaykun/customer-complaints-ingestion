@@ -29,6 +29,9 @@ class ComplaintData(BaseModel):
     complaintSummary: Optional[str] = ""
     completenessScore: Optional[float] = 0
     status: Optional[str] = "draft"
+    embeddingModel: Optional[str] = ""
+    hasEmbedding: Optional[bool] = False
+    embeddingDimensions: Optional[int] = 0
 
 
 class ChatRequest(BaseModel):
@@ -52,3 +55,22 @@ class UploadResponse(BaseModel):
     complaint_data: Optional[ComplaintData] = None
     extracted_text: Optional[str] = ""
     tool_calls: Optional[List[dict]] = []
+
+
+class DuplicateDetails(BaseModel):
+    """Details about a detected duplicate complaint."""
+    matched_complaint_id: Optional[str] = None
+    matched_product: Optional[str] = ""
+    matched_batch: Optional[str] = ""
+    similarity_score: float = 0.0
+    confidence: float = 0.0
+    explanation: str = ""
+
+
+class SubmitResponse(BaseModel):
+    """Schema for complaint submission response with duplicate detection."""
+    success: bool
+    message: str
+    complaint: Optional[ComplaintData] = None
+    duplicate_detected: bool = False
+    duplicate_details: Optional[DuplicateDetails] = None

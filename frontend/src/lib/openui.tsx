@@ -16,6 +16,7 @@ import {
   Globe,
   ClipboardList,
 } from "lucide-react";
+import { useAppSelector } from "@/store/hooks";
 
 /**
  * OpenUI Lang Parser & Generative UI Component Renderer.
@@ -79,34 +80,81 @@ export function MissingInfoFormComponent({
   element: OpenUIElement;
   onSubmit?: (data: Record<string, string>) => void;
 }) {
+  const existingComplaint = useAppSelector((state) => state.complaint);
   const fieldsProp = String(element.props.fields || "complainantEmail,complainantPhone,countryCode");
   const fieldList = fieldsProp.split(",").map((f) => f.trim()).filter(Boolean);
   const title = String(element.props.title || "Provide Missing Details");
   const prompt = String(element.props.prompt || "Please fill in the required fields below:");
 
+  // Prefer already-inferred form country code (e.g. +91 from India location).
+  // Never default to +1 — empty means "not provided / keep existing".
+  const existingCountryCode = (existingComplaint.countryCode || "").trim();
+  const askCountryCode = fieldList.includes("countryCode") && !existingCountryCode;
+
   const [formValues, setFormValues] = useState<Record<string, string>>({
-    countryCode: "+1",
-    complainantEmail: "",
-    complainantPhone: "",
+    countryCode: askCountryCode ? "" : existingCountryCode,
+    complainantEmail: existingComplaint.complainantEmail || "",
+    complainantPhone: existingComplaint.complainantPhone || "",
   });
   const [submitted, setSubmitted] = useState(false);
 
   const handleInputChange = (field: string, val: string) => {
+    if (field === "complainantPhone" && val.trim().startsWith("+")) {
+      const match = val.trim().match(/^(\+\d{1,4})\s*(.*)$/);
+      if (match) {
+        setFormValues((prev) => ({
+          ...prev,
+          countryCode: match[1],
+          complainantPhone: match[2],
+        }));
+        return;
+      }
+    }
     setFormValues((prev) => ({ ...prev, [field]: val }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitted(true);
-    if (onSubmit) {
-      onSubmit(formValues);
+    if (!onSubmit) return;
+
+    const finalValues: Record<string, string> = {};
+
+    // Only submit fields the form actually asked for (plus phone-parsed country code)
+    for (const field of fieldList) {
+      if (field === "countryCode") continue; // handled below
+      const value = (formValues[field] || "").trim();
+      if (value) finalValues[field] = value;
     }
+
+    let countryCode = (formValues.countryCode || "").trim();
+    const phone = (finalValues.complainantPhone || formValues.complainantPhone || "").trim();
+
+    if (phone.startsWith("+")) {
+      const match = phone.match(/^(\+\d{1,4})\s*(.*)$/);
+      if (match) {
+        countryCode = match[1];
+        finalValues.complainantPhone = match[2];
+      }
+    }
+
+    // Keep existing inferred code if user didn't pick one / didn't type +prefix
+    if (!countryCode && existingCountryCode) {
+      countryCode = existingCountryCode;
+    }
+
+    // Only include countryCode when we have a real value — never invent +1
+    if (countryCode) {
+      finalValues.countryCode = countryCode;
+    }
+
+    onSubmit(finalValues);
   };
 
   const countryCodeOptions = [
+    { code: "+91", label: "+91 (India)" },
     { code: "+1", label: "+1 (USA / Canada)" },
     { code: "+44", label: "+44 (United Kingdom)" },
-    { code: "+91", label: "+91 (India)" },
     { code: "+49", label: "+49 (Germany)" },
     { code: "+33", label: "+33 (France)" },
     { code: "+81", label: "+81 (Japan)" },
@@ -164,18 +212,25 @@ export function MissingInfoFormComponent({
       </CardHeader>
       <CardContent className="p-3.5 text-xs space-y-3">
         <p className="text-muted-foreground text-[11px] leading-relaxed">{prompt}</p>
+        {existingCountryCode && !askCountryCode && (
+          <p className="text-[11px] text-slate-600 dark:text-slate-300">
+            Using existing country code <strong>{existingCountryCode}</strong> from the complaint record.
+            Type phone as <code className="text-[10px]">+91 9231953110</code> only if you need to override it.
+          </p>
+        )}
         <form onSubmit={handleSubmit} className="space-y-2.5">
-          {fieldList.includes("countryCode") && (
+          {askCountryCode && (
             <div className="space-y-1">
               <Label className="text-[11px] font-medium flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                 <Globe className="w-3 h-3 text-blue-500" />
                 Country Code
               </Label>
               <select
-                value={formValues.countryCode || "+1"}
+                value={formValues.countryCode || ""}
                 onChange={(e) => handleInputChange("countryCode", e.target.value)}
                 className="w-full h-8 text-xs rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-1 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
+                <option value="">Select country code…</option>
                 {countryCodeOptions.map((opt) => (
                   <option key={opt.code} value={opt.code}>
                     {opt.label}
@@ -193,7 +248,11 @@ export function MissingInfoFormComponent({
               </Label>
               <Input
                 type="tel"
-                placeholder="e.g. (555) 123-4567"
+                placeholder={
+                  existingCountryCode
+                    ? `e.g. 9231953110 (keeps ${existingCountryCode})`
+                    : "e.g. +91 9231953110"
+                }
                 value={formValues.complainantPhone || ""}
                 onChange={(e) => handleInputChange("complainantPhone", e.target.value)}
                 className="h-8 text-xs bg-white dark:bg-slate-900"

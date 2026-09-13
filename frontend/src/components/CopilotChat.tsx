@@ -196,7 +196,13 @@ function TypingIndicator() {
   );
 }
 
-export default function CopilotChat() {
+export default function CopilotChat({
+  pendingAnalysis,
+  onAnalysisConsumed,
+}: {
+  pendingAnalysis?: ComplaintData | null;
+  onAnalysisConsumed?: () => void;
+}) {
   const dispatch = useAppDispatch();
   const { messages, isLoading, isUploading } = useAppSelector(
     (state) => state.chat
@@ -207,6 +213,7 @@ export default function CopilotChat() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [autoAnalysisTriggered, setAutoAnalysisTriggered] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -216,6 +223,33 @@ export default function CopilotChat() {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  // Auto-trigger AI analysis when a complaint is loaded from the list
+  useEffect(() => {
+    if (pendingAnalysis && !autoAnalysisTriggered && !isLoading) {
+      setAutoAnalysisTriggered(true);
+      const complaintSummary = [
+        pendingAnalysis.productName && `Product: ${pendingAnalysis.productName}`,
+        pendingAnalysis.batchNumber && `Batch: ${pendingAnalysis.batchNumber}`,
+        pendingAnalysis.severityLevel && `Severity: ${pendingAnalysis.severityLevel}`,
+      ].filter(Boolean).join(", ");
+
+      const prompt = `I've opened an existing complaint record${complaintSummary ? ` (${complaintSummary})` : ""}. Please analyze this complaint, assess its current risk level, check for completeness, and prompt me for any missing fields.`;
+      
+      // Small delay so the UI settles before sending
+      setTimeout(() => {
+        sendMessageText(prompt, pendingAnalysis);
+        if (onAnalysisConsumed) onAnalysisConsumed();
+      }, 300);
+    }
+  }, [pendingAnalysis, autoAnalysisTriggered, isLoading]);
+
+  // Reset the auto-analysis flag when pendingAnalysis changes
+  useEffect(() => {
+    if (!pendingAnalysis) {
+      setAutoAnalysisTriggered(false);
+    }
+  }, [pendingAnalysis]);
 
   const updateComplaint = (data: ComplaintData) => {
     const mapped: Record<string, unknown> = {};
@@ -227,7 +261,8 @@ export default function CopilotChat() {
     dispatch(setComplaintData(mapped));
   };
 
-  const sendMessageText = async (textToSend: string) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sendMessageText = async (textToSend: string, overrideComplaintData?: any) => {
     const text = textToSend.trim();
     if (!text || isLoading) return;
 
@@ -246,12 +281,19 @@ export default function CopilotChat() {
         .filter((m) => m.role !== "system")
         .map((m) => ({ role: m.role, content: m.content }));
 
+      const activeData = overrideComplaintData || complaint;
+
       const response = await sendChatMessage({
         message: text,
-        complaint_id: complaint.id,
-        complaint_data: complaint,
+        complaint_id: (activeData.id as string) || complaint.id,
+        complaint_data: activeData,
         chat_history: chatHistory.slice(-10), // Last 10 messages for context
       });
+
+      // Update left form first so edits are visible immediately
+      if (response.complaint_data) {
+        updateComplaint(response.complaint_data);
+      }
 
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -261,10 +303,6 @@ export default function CopilotChat() {
         toolCalls: response.tool_calls,
       };
       dispatch(addMessage(assistantMessage));
-
-      if (response.complaint_data) {
-        updateComplaint(response.complaint_data);
-      }
     } catch (err: unknown) {
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -281,13 +319,38 @@ export default function CopilotChat() {
   const handleSend = () => sendMessageText(input);
 
   const handleFormSubmit = (formData: Record<string, string>) => {
-    dispatch(setComplaintData(formData));
-    const fieldPairs = Object.entries(formData)
-      .filter(([_, v]) => v && v.trim())
+    const cleaned: Record<string, string> = {};
+    for (const [key, raw] of Object.entries(formData)) {
+      const value = String(raw ?? "").trim();
+      if (!value) continue;
+      // Never overwrite an inferred country code with a blind +1 default
+      if (
+        key === "countryCode" &&
+        value === "+1" &&
+        complaint.countryCode &&
+        complaint.countryCode !== "+1"
+      ) {
+        continue;
+      }
+      cleaned[key] = value;
+    }
+
+    // Preserve existing inferred country code when phone is submitted without one
+    if (
+      cleaned.complainantPhone &&
+      !cleaned.countryCode &&
+      complaint.countryCode
+    ) {
+      cleaned.countryCode = complaint.countryCode;
+    }
+
+    dispatch(setComplaintData(cleaned));
+    const mergedComplaintData = { ...complaint, ...cleaned };
+    const fieldPairs = Object.entries(cleaned)
       .map(([k, v]) => `${k}: ${v}`)
       .join(", ");
     if (fieldPairs) {
-      sendMessageText(`Provided missing details - ${fieldPairs}`);
+      sendMessageText(`Provided missing details - ${fieldPairs}`, mergedComplaintData);
     }
   };
 
@@ -309,6 +372,11 @@ export default function CopilotChat() {
     try {
       const response = await uploadDocument(file);
 
+      // Populate the left form immediately — before chat UI work
+      if (response.complaint_data) {
+        updateComplaint(response.complaint_data);
+      }
+
       const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -318,9 +386,6 @@ export default function CopilotChat() {
       };
       dispatch(addMessage(assistantMessage));
 
-      if (response.complaint_data) {
-        updateComplaint(response.complaint_data);
-      }
       setStagedFile(null);
       setShowUploadSection(false);
     } catch (error) {

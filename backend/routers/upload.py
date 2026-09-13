@@ -1,115 +1,104 @@
+import asyncio
 import traceback
-from fastapi import APIRouter, UploadFile, File, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, UploadFile, File
 import pypdf
 import io
 
 from schemas.complaint import UploadResponse, ComplaintData
-from agent.graph import run_agent
-from models.database import get_db
-from models.complaint import Complaint
+from agent.graph import (
+    compute_completeness,
+    _normalize_missing_info_form,
+)
+from services.document_extractor import extract_complaint_from_document
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_document(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    """Upload a document (PDF, text, email) for AI-powered complaint extraction.
-    
-    The endpoint:
-    1. Reads the uploaded file and extracts text content
-    2. Passes the text to the LangGraph agent with extraction instructions
-    3. Returns extracted complaint data and AI risk assessment
+async def upload_document(file: UploadFile = File(...)):
+    """Upload a document for fast direct LLM extraction (no DB write on upload).
+
+    Form fields are returned immediately; persistence + duplicate checks happen on Submit.
     """
     try:
-        # Read file content
         content = await file.read()
-        extracted_text = ""
+        filename = file.filename or "document"
 
-        # Extract text based on file type
-        if file.filename and file.filename.lower().endswith(".pdf"):
-            extracted_text = _extract_pdf_text(content)
-        elif file.filename and file.filename.lower().endswith((".txt", ".eml", ".msg")):
-            extracted_text = content.decode("utf-8", errors="replace")
-        else:
-            # Try to read as text for any other format
-            try:
-                extracted_text = content.decode("utf-8", errors="replace")
-            except Exception:
-                extracted_text = str(content)
-
-        if not extracted_text.strip():
+        if not content:
             return UploadResponse(
-                response="I couldn't extract any text from the uploaded file. Please try a different file format (PDF, TXT, or email).",
+                response="The uploaded file was empty. Please try another file.",
                 complaint_data=None,
                 extracted_text="",
                 tool_calls=[],
             )
 
-        # Create a prompt for the agent to extract document data
-        extraction_prompt = (
-            f"I've uploaded a document for complaint extraction. "
-            f"Please analyze the following document text and extract all relevant "
-            f"pharmaceutical complaint details. Use the extract_document tool to "
-            f"populate the complaint form and generate a risk assessment.\n\n"
-            f"--- DOCUMENT CONTENT ---\n{extracted_text}\n--- END DOCUMENT ---"
+        extraction_mode = "gemini_direct"
+        preview_text = ""
+
+        try:
+            # Run sync Gemini I/O off the event loop
+            complaint_data = await asyncio.to_thread(
+                extract_complaint_from_document, content, filename
+            )
+        except Exception as gemini_err:
+            traceback.print_exc()
+            print(f"Direct file extraction failed ({gemini_err}); trying text fallback")
+            extraction_mode = "text_fallback"
+            if filename.lower().endswith(".pdf") or content[:4] == b"%PDF":
+                preview_text = await asyncio.to_thread(_extract_pdf_text, content)
+            else:
+                preview_text = content.decode("utf-8", errors="replace")
+
+            if not preview_text.strip():
+                return UploadResponse(
+                    response=(
+                        "I couldn't read this document. Please upload a PDF, image, "
+                        "or text email, or paste the complaint text in chat."
+                    ),
+                    complaint_data=None,
+                    extracted_text="",
+                    tool_calls=[],
+                )
+
+            complaint_data = await asyncio.to_thread(
+                extract_complaint_from_document,
+                preview_text.encode("utf-8"),
+                (filename.rsplit(".", 1)[0] + ".txt"),
+            )
+
+        completeness = compute_completeness(complaint_data)
+        used_model = complaint_data.pop("_extractionModel", None)
+        complaint_data.update(completeness)
+
+        preface = (
+            "I've read the uploaded document and populated the form on the left."
         )
-
-        # Run the agent with the extraction prompt
-        result = await run_agent(
-            user_message=extraction_prompt,
-            complaint_data={},
-            chat_history=[],
-        )
-
-        complaint_data = result.get("complaint_data", {})
-
-        # Save to database
-        if complaint_data and any(
-            complaint_data.get(k) for k in ["productName", "complaintDescription", "batchNumber"]
-        ):
-            complaint = Complaint()
-            db.add(complaint)
-            
-            field_mapping = {
-                "productName": "product_name",
-                "productStrength": "product_strength",
-                "dosageForm": "dosage_form",
-                "batchNumber": "batch_number",
-                "lotNumber": "lot_number",
-                "manufacturingDate": "manufacturing_date",
-                "expiryDate": "expiry_date",
-                "complaintCategory": "complaint_category",
-                "complaintDescription": "complaint_description",
-                "complainantName": "complainant_name",
-                "complainantContact": "complainant_contact",
-                "dateOfComplaint": "date_of_complaint",
-                "dateOfIncident": "date_of_incident",
-                "severityLevel": "severity_level",
-                "riskScore": "risk_score",
-                "recommendedActions": "recommended_actions",
-                "rootCauseHypothesis": "root_cause_hypothesis",
-                "capaRecommendation": "capa_recommendation",
-                "complaintSummary": "complaint_summary",
-                "completenessScore": "completeness_score",
-                "status": "status",
-            }
-            for api_field, db_field in field_mapping.items():
-                if api_field in complaint_data and complaint_data[api_field] is not None:
-                    setattr(complaint, db_field, complaint_data[api_field])
-
-            db.commit()
-            db.refresh(complaint)
-            complaint_data["id"] = str(complaint.id)
+        response_text = _normalize_missing_info_form("", completeness, complaint_data)
+        if response_text.startswith("I've extracted"):
+            response_text = response_text.replace(
+                "I've extracted the complaint details into the form on the left.",
+                preface,
+                1,
+            )
+        else:
+            response_text = f"{preface}\n\n{response_text}".strip()
 
         return UploadResponse(
-            response=result.get("response", "Document processed successfully."),
+            response=response_text,
             complaint_data=ComplaintData(**complaint_data) if complaint_data else None,
-            extracted_text=extracted_text[:2000],  # Limit for response size
-            tool_calls=result.get("tool_calls", []),
+            extracted_text=(preview_text or "")[:500],
+            tool_calls=[
+                {
+                    "tool": "extract_document_direct",
+                    "result": {
+                        "mode": extraction_mode,
+                        "filename": filename,
+                        "model": used_model,
+                        "fields_filled": completeness.get("filledFields", 0),
+                        "completeness": completeness.get("completenessScore", 0),
+                    },
+                }
+            ],
         )
 
     except Exception as e:
@@ -123,7 +112,7 @@ async def upload_document(
 
 
 def _extract_pdf_text(content: bytes) -> str:
-    """Extract text from PDF binary content using pypdf."""
+    """Best-effort text extract for fallback only."""
     try:
         reader = pypdf.PdfReader(io.BytesIO(content))
         text_parts = []

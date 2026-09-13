@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 
 interface HeaderProps {
   activeView: "list" | "form";
-  onNavigate: (view: "list" | "form") => void;
+  onNavigate: () => void;
   onNewComplaint: () => void;
 }
 
@@ -15,7 +15,7 @@ export default function Header({
   return (
     <header className="header">
       <div className="header-inner">
-        <div className="header-brand cursor-pointer" onClick={() => onNavigate("list")}>
+        <div className="header-brand cursor-pointer" onClick={() => onNavigate()}>
           <div className="header-logo">
             <Shield className="header-logo-icon" />
           </div>
@@ -42,7 +42,7 @@ export default function Header({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onNavigate("list")}
+              onClick={() => onNavigate()}
               className="header-new-btn border-slate-300 dark:border-slate-700"
             >
               <ArrowLeft size={14} />
@@ -56,7 +56,7 @@ export default function Header({
             className="header-new-btn bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm"
           >
             <Plus size={14} />
-            + New Complaint
+            New Complaint
           </Button>
         </div>
       </div>

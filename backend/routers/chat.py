@@ -7,6 +7,8 @@ from schemas.complaint import ChatRequest, ChatResponse, ComplaintData
 from agent.graph import run_agent
 from models.database import get_db
 from models.complaint import Complaint
+from services.duplicate_detector import generate_and_store_embedding
+from services.complaint_sanitize import sanitize_complaint_for_db
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -39,14 +41,27 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
         # Extract complaint data from agent result
-        complaint_data = result.get("complaint_data", {})
-        
-        # Save/update complaint in database if we have data
+        complaint_data = result.get("complaint_data", {}) or {}
+        if complaint_data:
+            complaint_data = sanitize_complaint_for_db(complaint_data)
+
+        # Prefer id from current form/state when saving
+        save_id = request.complaint_id or (complaint_data.get("id") if complaint_data else None)
+
+        # Persist if possible, but ALWAYS return updated complaint_data to the UI
         if complaint_data and any(
             complaint_data.get(k) for k in ["productName", "complaintDescription", "batchNumber"]
         ):
-            complaint = _save_complaint(db, complaint_data, request.complaint_id)
-            complaint_data["id"] = str(complaint.id)
+            try:
+                complaint = _save_complaint(db, complaint_data, save_id)
+                complaint_data["id"] = str(complaint.id)
+            except Exception as save_err:
+                traceback.print_exc()
+                print(f"Chat save warning (UI still updated): {save_err}")
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
 
         return ChatResponse(
             response=result.get("response", "I couldn't process that request. Please try again."),
@@ -65,6 +80,8 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db)):
 
 def _save_complaint(db: Session, data: dict, complaint_id: str | None = None) -> Complaint:
     """Save or update a complaint record in the database."""
+    data = sanitize_complaint_for_db(data)
+
     if complaint_id:
         complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     else:
@@ -105,6 +122,12 @@ def _save_complaint(db: Session, data: dict, complaint_id: str | None = None) ->
     for api_field, db_field in field_mapping.items():
         if api_field in data and data[api_field] is not None:
             setattr(complaint, db_field, data[api_field])
+
+    # Keep embedding in sync when complaint content changes
+    try:
+        generate_and_store_embedding(db, complaint, data, commit=False)
+    except Exception as emb_err:
+        print(f"Chat save embedding warning: {emb_err}")
 
     db.commit()
     db.refresh(complaint)
