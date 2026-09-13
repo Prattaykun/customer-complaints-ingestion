@@ -1,7 +1,7 @@
 import time
 import traceback
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -87,6 +87,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def auto_api_prefix_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith(("/complaints", "/chat", "/upload")) and not path.startswith("/api/"):
+        request.scope["path"] = f"/api{path}"
+    return await call_next(request)
+
 
 app.include_router(chat.router)
 app.include_router(upload.router)
