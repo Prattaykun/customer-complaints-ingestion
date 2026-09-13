@@ -1,0 +1,48 @@
+From: john.smith@pharmaretail.com
+To: quality.complaints@pharmamanufacturer.com
+Subject: Urgent - Product Quality Complaint - Amoxicillin Capsules 500mg
+Date: September 10, 2026
+
+Dear Quality Assurance Team,
+
+I am writing to report a product quality complaint regarding Amoxicillin Capsules 500mg that we received from one of our retail pharmacy customers.
+
+PRODUCT DETAILS:
+- Product Name: Amoxicillin Capsules
+- Strength: 500mg
+- Dosage Form: Hard Gelatin Capsules
+- Batch Number: AMX-2024-0847
+- Lot Number: L-2024-03-AMX
+- Manufacturing Date: 2024-03-15
+- Expiry Date: 2026-03-14
+- NDC: 12345-678-90
+
+COMPLAINT DETAILS:
+The pharmacy reported that upon opening a sealed bottle of 500 count Amoxicillin 500mg capsules (Batch AMX-2024-0847), approximately 15-20 capsules showed visible discoloration. The affected capsules exhibited yellowish-brown spots on the capsule shell, which was different from the typical opaque yellow/blue appearance.
+
+The pharmacist noted that:
+1. The bottle seal was intact upon receipt
+2. The discoloration was observed on capsule shells only
+3. No unusual odor was detected
+4. The affected capsules appeared slightly softer than normal capsules
+5. Storage conditions at the pharmacy were within specifications (controlled room temperature, 20-25°C)
+
+The observation was made on September 8, 2026, during routine inventory inspection.
+
+COMPLAINANT INFORMATION:
+- Name: Dr. John Smith, PharmD
+- Title: Lead Pharmacist
+- Pharmacy: MedCare Retail Pharmacy #247
+- Contact: john.smith@pharmaretail.com
+- Phone: (555) 123-4567
+
+This is being reported as an urgent quality complaint as the product was available for patient dispensing. No adverse events have been reported from patients who may have received capsules from this batch.
+
+We have quarantined the remaining bottles from this batch (approximately 25 bottles) and are awaiting your guidance on further action.
+
+Please advise on the next steps.
+
+Best regards,
+Dr. John Smith, PharmD
+Lead Pharmacist
+MedCare Retail Pharmacy #247
