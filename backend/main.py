@@ -93,7 +93,7 @@ app.include_router(upload.router)
 app.include_router(complaints.router)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "name": "PharmaQMS Customer Complaint Management API",
@@ -102,6 +102,6 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "healthy"}
